@@ -1,0 +1,31 @@
+name: Build ShortsPrep portable exe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish portable exe
+        run: >
+          dotnet publish ShortsPrep/ShortsPrep.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish
+
+      - name: Upload exe as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShortsPrep-portable
+          path: publish/ShortsPrep.exe
