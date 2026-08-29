@@ -38,7 +38,10 @@
                 <StackPanel x:Name="VideoModePanel" Orientation="Horizontal">
                     <Button x:Name="BrowseButton" Content="Choisir une vidéo..." Padding="12,6" Click="BrowseButton_Click"/>
                     <TextBlock x:Name="SelectedFileText" Text="Aucun fichier sélectionné"
-                               Foreground="{StaticResource SubTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                               Foreground="{StaticResource SubTextBrush}" Margin="12,0,12,0" VerticalAlignment="Center"/>
+                    <Button x:Name="TrimVideoButton" Content="Rogner..." Padding="10,6" Click="TrimVideoButton_Click" IsEnabled="False"/>
+                    <TextBlock x:Name="VideoTrimText" Text="" Foreground="{StaticResource AccentBrush}"
+                               Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
 
                 <!-- Mode image + audio -->
@@ -51,10 +54,32 @@
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <Button x:Name="BrowseAudioButton" Content="Choisir un son..." Padding="12,6" Click="BrowseAudioButton_Click"/>
                         <TextBlock x:Name="SelectedAudioText" Text="Aucun son sélectionné"
-                                   Foreground="{StaticResource SubTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                   Foreground="{StaticResource SubTextBrush}" Margin="12,0,12,0" VerticalAlignment="Center"/>
+                        <Button x:Name="TrimAudioButton" Content="Rogner..." Padding="10,6" Click="TrimAudioButton_Click" IsEnabled="False"/>
+                        <TextBlock x:Name="AudioTrimText" Text="" Foreground="{StaticResource AccentBrush}"
+                                   Margin="10,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <CheckBox x:Name="FlacMasterCheck" Content="Créer aussi un fichier maître 100% sans perte (image + audio FLAC intégré, .mkv)"
                               Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,4,0,4"/>
+
+                    <Separator Margin="0,8"/>
+                    <TextBlock Text="Mouvement de caméra et réactivité à la musique" Foreground="{StaticResource TextBrush}"
+                               FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <CheckBox x:Name="KenBurnsCheck" Content="Mouvement de caméra (zoom lent + léger travelling, façon Ken Burns)"
+                              Foreground="{StaticResource TextBrush}" IsChecked="True" Checked="MotionCheck_Changed" Unchecked="MotionCheck_Changed"/>
+                    <StackPanel x:Name="KenBurnsIntensityPanel" Orientation="Horizontal" Margin="20,2,0,6">
+                        <TextBlock Text="Intensité :" Foreground="{StaticResource SubTextBrush}" Width="70" VerticalAlignment="Center"/>
+                        <Slider x:Name="KenBurnsIntensitySlider" Minimum="0" Maximum="100" Value="50" Width="220"/>
+                    </StackPanel>
+                    <CheckBox x:Name="BassReactiveCheck" Content="Le zoom réagit aux basses (pulsation sur les kicks/basses détectées)"
+                              Foreground="{StaticResource TextBrush}" Checked="MotionCheck_Changed" Unchecked="MotionCheck_Changed"/>
+                    <StackPanel x:Name="BassSensitivityPanel" Orientation="Horizontal" Margin="20,2,0,4" Visibility="Collapsed">
+                        <TextBlock Text="Sensibilité :" Foreground="{StaticResource SubTextBrush}" Width="70" VerticalAlignment="Center"/>
+                        <Slider x:Name="BassSensitivitySlider" Minimum="0" Maximum="100" Value="60" Width="220"/>
+                    </StackPanel>
+                    <TextBlock Text="Analyse l'énergie des basses de l'audio (pas une détection de rythme parfaite : ça pulse fort sur les kicks/basses marquées, moins sur des morceaux sans basse nette)."
+                               Foreground="{StaticResource SubTextBrush}" FontStyle="Italic" TextWrapping="Wrap" Margin="0,2,0,0"/>
+
                     <Separator Margin="0,8"/>
                     <TextBlock Text="Méthode simple (commande directe, audio copié sans ré-encodage)"
                                Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,6"/>
@@ -67,7 +92,7 @@
                     <Button x:Name="StartSimpleCombineButton" Content="Démarrer" Padding="16,8" FontWeight="Bold"
                             Background="{StaticResource AccentBrush}" Foreground="White" HorizontalAlignment="Left"
                             IsEnabled="False" Click="StartSimpleCombineButton_Click"/>
-                    <TextBlock Text="La vidéo générée durera exactement la durée du son."
+                    <TextBlock Text="La vidéo générée durera exactement la durée du son (max 60s en portrait, illimité en paysage/maître)."
                                Foreground="{StaticResource SubTextBrush}" FontStyle="Italic" Margin="0,8,0,0"/>
                 </StackPanel>
             </StackPanel>

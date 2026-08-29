@@ -23,9 +23,28 @@ public enum Orientation { Portrait9x16, Landscape16x9 }
 
 public record VideoInfo(int Width, int Height, double DurationSeconds, string VideoCodec, bool HasAudio);
 
+/// <summary>Réglages du mouvement de caméra / réactivité aux basses pour le mode image + son.</summary>
+public record MotionSettings(
+    bool KenBurnsEnabled, double KenBurnsIntensity01,
+    bool BassReactiveEnabled, double BassSensitivity01)
+{
+    public static readonly MotionSettings None = new(false, 0, false, 0);
+    public bool IsAnyEnabled => KenBurnsEnabled || BassReactiveEnabled;
+}
+
+/// <summary>Portion de la source à conserver (recadrage temporel), en secondes.</summary>
+public record TrimRange(double StartSeconds, double EndSeconds)
+{
+    public double Duration => Math.Max(0, EndSeconds - StartSeconds);
+}
+
 public class VideoProcessor
 {
     private static readonly Regex TimeRegex = new(@"time=(\d+):(\d+):(\d+\.\d+)", RegexOptions.Compiled);
+    private readonly BassAnalyzer _bassAnalyzer = new();
+
+    // Format "shorts" (portrait) : limite dure à 60s pour coller aux contraintes des plateformes.
+    private const double PortraitMaxDurationSeconds = 60.0;
 
     /// <summary>Interroge ffprobe pour connaître les caractéristiques du fichier source.</summary>
     public async Task<VideoInfo> ProbeAsync(string inputPath)
@@ -67,16 +86,14 @@ public class VideoProcessor
         IProgress<int>? percentProgress = null)
     {
         var info = await ProbeAsync(inputPath);
-        // -vn : pas de vidéo. Codec PCM (wav) ou FLAC : compression sans perte, bit-exact.
         var codecArgs = format == LosslessAudioFormat.Wav ? "-c:a pcm_s24le" : "-c:a flac -compression_level 8";
         var args = $"-y -i \"{inputPath}\" -vn {codecArgs} \"{outputPath}\"";
         await RunAsync(FfmpegManager.FfmpegExe, args, info.DurationSeconds, percentProgress);
     }
 
     /// <summary>
-    /// Convertit la vidéo au format choisi (portrait 9:16 ou paysage 16:9), en visant
-    /// la meilleure qualité possible, tout en réintégrant l'audio d'origine sans le
-    /// ré-encoder inutilement plus d'une fois (copy du flux audio quand le conteneur le permet).
+    /// Convertit la vidéo au format choisi (portrait 9:16 ou paysage 16:9). Les sorties
+    /// portrait sont automatiquement limitées à 60s (contrainte shorts/reels/stories).
     /// </summary>
     public async Task ConvertToPortraitAsync(
         string inputPath,
@@ -85,6 +102,7 @@ public class VideoProcessor
         QualityMode quality,
         VideoInfo info,
         Orientation orientation,
+        TrimRange? trim = null,
         IProgress<string>? progress = null,
         IProgress<int>? percentProgress = null)
     {
@@ -102,19 +120,26 @@ public class VideoProcessor
 
         bool copyingVideo = videoCodecArgs.Contains("copy");
         string filterArgs = copyingVideo ? "" : $"-vf \"{videoFilter}\"";
-
         string audioArgs = info.HasAudio ? "-c:a aac -b:a 320k -ar 48000" : "-an";
 
-        var args = $"-y -i \"{inputPath}\" {filterArgs} {videoCodecArgs} {audioArgs} " +
+        double sourceDuration = trim?.Duration ?? info.DurationSeconds;
+        double effectiveDuration = orientation == Orientation.Portrait9x16
+            ? Math.Min(sourceDuration, PortraitMaxDurationSeconds) : sourceDuration;
+
+        string seekArgs = trim is not null ? $"-ss {trim.StartSeconds.ToString(CultureInfo.InvariantCulture)} " : "";
+        string durationArgs = $"-t {effectiveDuration.ToString(CultureInfo.InvariantCulture)} ";
+
+        var args = $"-y {seekArgs}-i \"{inputPath}\" {filterArgs} {videoCodecArgs} {audioArgs} {durationArgs}" +
                    $"-movflags +faststart \"{outputPath}\"";
 
         progress?.Report($"Encodage pour {profile.Name}...");
-        await RunAsync(FfmpegManager.FfmpegExe, args, info.DurationSeconds, percentProgress);
+        await RunAsync(FfmpegManager.FfmpegExe, args, effectiveDuration, percentProgress);
     }
 
     /// <summary>
-    /// Crée une vidéo à partir d'une image fixe et d'une piste audio : la durée de la
-    /// vidéo est exactement calée sur la durée de l'audio.
+    /// Crée une vidéo à partir d'une image fixe et d'une piste audio, avec option de
+    /// mouvement de caméra (Ken Burns) et de réaction du zoom aux basses. Les sorties
+    /// portrait sont limitées à 60s.
     /// </summary>
     public async Task CreateFromImageAndAudioAsync(
         string imagePath,
@@ -123,49 +148,83 @@ public class VideoProcessor
         PlatformProfile profile,
         QualityMode quality,
         Orientation orientation,
+        MotionSettings? motion = null,
+        TrimRange? trim = null,
         IProgress<string>? progress = null,
         IProgress<int>? percentProgress = null)
     {
+        motion ??= MotionSettings.None;
         var imageInfo = await ProbeAsync(imagePath);
         var audioInfo = await ProbeAsync(audioPath);
         var (tw, th) = GetDimensions(orientation);
-        string videoFilter = BuildAspectFilter(imageInfo, tw, th);
+
+        double sourceDuration = trim?.Duration ?? audioInfo.DurationSeconds;
+        double effectiveDuration = orientation == Orientation.Portrait9x16
+            ? Math.Min(sourceDuration, PortraitMaxDurationSeconds) : sourceDuration;
+
+        List<BassPeak> peaks = new();
+        if (motion.BassReactiveEnabled)
+        {
+            progress?.Report("Analyse des basses de l'audio...");
+            peaks = await _bassAnalyzer.AnalyzePeaksAsync(audioPath, motion.BassSensitivity01);
+            progress?.Report($"{peaks.Count} pics de basses détectés.");
+        }
+
+        string videoFilter = motion.IsAnyEnabled
+            ? BuildMotionFilter(imageInfo, tw, th, motion, peaks, effectiveDuration)
+            : BuildAspectFilter(imageInfo, tw, th);
 
         string videoCodecArgs = quality == QualityMode.TrueLossless
-            ? "-c:v libx264 -preset veryslow -crf 0 -tune stillimage -pix_fmt yuv420p"
-            : "-c:v libx264 -preset slow -crf 16 -tune stillimage -pix_fmt yuv420p";
+            ? $"-c:v libx264 -preset veryslow -crf 0{(motion.IsAnyEnabled ? "" : " -tune stillimage")} -pix_fmt yuv420p"
+            : $"-c:v libx264 -preset slow -crf 16{(motion.IsAnyEnabled ? "" : " -tune stillimage")} -pix_fmt yuv420p";
+
+        string seekArgs = trim is not null ? $"-ss {trim.StartSeconds.ToString(CultureInfo.InvariantCulture)} " : "";
 
         var args =
-            $"-y -loop 1 -i \"{imagePath}\" -i \"{audioPath}\" " +
+            $"-y -loop 1 -framerate 30 -i \"{imagePath}\" {seekArgs}-i \"{audioPath}\" " +
             $"-vf \"{videoFilter}\" {videoCodecArgs} " +
             $"-c:a aac -b:a 320k -ar 48000 " +
-            $"-shortest -movflags +faststart \"{outputPath}\"";
+            $"-t {effectiveDuration.ToString(CultureInfo.InvariantCulture)} -movflags +faststart \"{outputPath}\"";
 
         progress?.Report($"Création de la vidéo image + audio pour {profile.Name}...");
-        await RunAsync(FfmpegManager.FfmpegExe, args, audioInfo.DurationSeconds, percentProgress);
+        await RunAsync(FfmpegManager.FfmpegExe, args, effectiveDuration, percentProgress);
     }
 
     /// <summary>
     /// Fichier "maître" 100% sans perte : image fixe + audio intégré en FLAC (sans perte,
-    /// bit-exact), vidéo encodée en CRF 0. Conteneur .mkv.
+    /// bit-exact), vidéo encodée en CRF 0. Conteneur .mkv. Pas de limite de durée (archive).
     /// </summary>
     public async Task CreateLosslessMasterAsync(
         string imagePath,
         string audioPath,
         string outputPath,
         Orientation orientation,
+        MotionSettings? motion = null,
         IProgress<string>? progress = null,
         IProgress<int>? percentProgress = null)
     {
+        motion ??= MotionSettings.None;
         var imageInfo = await ProbeAsync(imagePath);
         var audioInfo = await ProbeAsync(audioPath);
         var (tw, th) = GetDimensions(orientation);
-        string videoFilter = BuildAspectFilter(imageInfo, tw, th);
+
+        List<BassPeak> peaks = new();
+        if (motion.BassReactiveEnabled)
+        {
+            progress?.Report("Analyse des basses de l'audio...");
+            peaks = await _bassAnalyzer.AnalyzePeaksAsync(audioPath, motion.BassSensitivity01);
+        }
+
+        string videoFilter = motion.IsAnyEnabled
+            ? BuildMotionFilter(imageInfo, tw, th, motion, peaks, audioInfo.DurationSeconds)
+            : BuildAspectFilter(imageInfo, tw, th);
+
+        string tuneArgs = motion.IsAnyEnabled ? "" : " -tune stillimage";
 
         var args =
-            $"-y -loop 1 -i \"{imagePath}\" -i \"{audioPath}\" " +
+            $"-y -loop 1 -framerate 30 -i \"{imagePath}\" -i \"{audioPath}\" " +
             $"-vf \"{videoFilter}\" " +
-            $"-c:v libx264 -preset veryslow -crf 0 -tune stillimage -pix_fmt yuv420p " +
+            $"-c:v libx264 -preset veryslow -crf 0{tuneArgs} -pix_fmt yuv420p " +
             $"-c:a flac -compression_level 8 " +
             $"-shortest \"{outputPath}\"";
 
@@ -176,7 +235,6 @@ public class VideoProcessor
     /// <summary>
     /// Combine une image et un son en vidéo, exactement selon la commande de référence :
     /// ffmpeg -loop 1 -i image -i son -shortest -c:a copy -strict -2 sortie.mp4
-    /// Aucun ré-encodage de l'audio (copie brute du flux d'origine, bit pour bit).
     /// </summary>
     public async Task CreateSimpleFromImageAndAudioAsync(
         string imagePath,
@@ -209,8 +267,8 @@ public class VideoProcessor
     }
 
     /// <summary>
-    /// Construit le filtre ffmpeg : recadrage centré pour remplir le cadre cible sans
-    /// déformer l'image. Fond flou + image centrée si la source est plus étroite que la cible.
+    /// Construit le filtre ffmpeg statique : recadrage centré pour remplir le cadre cible
+    /// sans déformer l'image. Fond flou + image centrée si la source est plus étroite.
     /// </summary>
     private static string BuildAspectFilter(VideoInfo info, int tw, int th)
     {
@@ -233,6 +291,68 @@ public class VideoProcessor
         {
             return $"scale={tw}:{th}:flags=lanczos";
         }
+    }
+
+    /// <summary>
+    /// Construit le filtre ffmpeg avec mouvement : l'image est d'abord mise à l'échelle en
+    /// "surplus" (overscan 1.35x) pour toujours couvrir le cadre final, puis un zoom
+    /// dynamique (Ken Burns + pulsations sur les basses) et un léger travelling sont
+    /// appliqués frame par frame (scale...eval=frame + crop avec expressions en "t"),
+    /// avant un recadrage final au format cible. Technique validée : crop/scale réévaluent
+    /// leurs expressions par image quand eval=frame est actif, sans dépendance externe.
+    /// Note : contrairement à BuildAspectFilter, ce mode recadre toujours pour remplir le
+    /// cadre (pas de fond flou) — nécessaire pour garder une marge de mouvement sûre.
+    /// </summary>
+    private static string BuildMotionFilter(
+        VideoInfo info, int tw, int th, MotionSettings motion, List<BassPeak> peaks, double totalDuration)
+    {
+        const double overscan = 1.35;
+        const double zoomCap = 1.30; // reste sous l'overscan pour ne jamais montrer de bord vide
+        const double kenBurnsMaxGrowth = 0.10; // +10% de zoom continu max sur toute la durée
+        const double panMaxFraction = 0.05;    // travelling max = 5% de la largeur/hauteur cible
+        const double pulseDecaySeconds = 0.15;
+
+        int ow = (int)Math.Round(tw * overscan);
+        int oh = (int)Math.Round(th * overscan);
+        double safeDuration = Math.Max(totalDuration, 0.1);
+
+        // Étape 1 : l'image couvre toujours le cadre "overscan" (recadrage centré, sans déformation).
+        var chain = new StringBuilder();
+        chain.Append($"scale={ow}:{oh}:force_original_aspect_ratio=increase,crop={ow}:{oh}");
+
+        // Étape 2 : zoom dynamique = Ken Burns continu + pulsations sur les pics de basses.
+        string kenBurnsTerm = motion.KenBurnsEnabled
+            ? $"({kenBurnsMaxGrowth.ToString(CultureInfo.InvariantCulture)}*{motion.KenBurnsIntensity01.ToString(CultureInfo.InvariantCulture)}*(t/{safeDuration.ToString(CultureInfo.InvariantCulture)}))"
+            : "0";
+
+        var pulseTerms = new StringBuilder("0");
+        if (motion.BassReactiveEnabled)
+        {
+            double ampScale = 0.06 + 0.14 * Math.Clamp(motion.BassSensitivity01, 0, 1);
+            foreach (var peak in peaks)
+            {
+                double amp = ampScale * peak.Strength01;
+                pulseTerms.Append(
+                    $"+({amp.ToString("F4", CultureInfo.InvariantCulture)}*max(0,1-abs(t-{peak.TimeSeconds.ToString("F3", CultureInfo.InvariantCulture)})/{pulseDecaySeconds.ToString(CultureInfo.InvariantCulture)}))");
+            }
+        }
+
+        string zoomExpr = $"min({zoomCap.ToString(CultureInfo.InvariantCulture)},1+{kenBurnsTerm}+({pulseTerms}))";
+        chain.Append($",scale=w='iw*({zoomExpr})':h='ih*({zoomExpr})':eval=frame");
+
+        // Étape 3 : léger travelling (pan) continu si Ken Burns actif, puis recadrage final.
+        double panAmpX = motion.KenBurnsEnabled ? tw * panMaxFraction * motion.KenBurnsIntensity01 : 0;
+        double panAmpY = motion.KenBurnsEnabled ? th * (panMaxFraction * 0.6) * motion.KenBurnsIntensity01 : 0;
+        string panX = panAmpX > 0
+            ? $"+{panAmpX.ToString("F2", CultureInfo.InvariantCulture)}*sin(2*PI*t/{safeDuration.ToString(CultureInfo.InvariantCulture)})"
+            : "";
+        string panY = panAmpY > 0
+            ? $"+{panAmpY.ToString("F2", CultureInfo.InvariantCulture)}*cos(2*PI*t/{(safeDuration * 1.3).ToString(CultureInfo.InvariantCulture)})"
+            : "";
+
+        chain.Append($",crop={tw}:{th}:x='(iw-ow)/2{panX}':y='(ih-oh)/2{panY}'");
+
+        return chain.ToString();
     }
 
     /// <summary>

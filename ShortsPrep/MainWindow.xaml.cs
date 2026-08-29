@@ -15,6 +15,8 @@ public partial class MainWindow : Window
     private string? _customOutputDir;
     private string? _lastOutputDir;
     private string? _simpleOutputPath;
+    private TrimRange? _videoTrim;
+    private TrimRange? _audioTrim;
 
     public MainWindow()
     {
@@ -45,6 +47,19 @@ public partial class MainWindow : Window
         ImageAudioModePanel.Visibility = videoMode ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    private void MotionCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (KenBurnsIntensityPanel is null || BassSensitivityPanel is null) return;
+        KenBurnsIntensityPanel.Visibility = KenBurnsCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        BassSensitivityPanel.Visibility = BassReactiveCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private MotionSettings GetMotionSettings() => new(
+        KenBurnsEnabled: KenBurnsCheck.IsChecked == true,
+        KenBurnsIntensity01: KenBurnsIntensitySlider.Value / 100.0,
+        BassReactiveEnabled: BassReactiveCheck.IsChecked == true,
+        BassSensitivity01: BassSensitivitySlider.Value / 100.0);
+
     private void BrowseButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog
@@ -55,6 +70,9 @@ public partial class MainWindow : Window
         {
             _selectedFile = dialog.FileName;
             SelectedFileText.Text = Path.GetFileName(_selectedFile);
+            _videoTrim = null;
+            VideoTrimText.Text = "";
+            TrimVideoButton.IsEnabled = true;
         }
     }
 
@@ -81,6 +99,33 @@ public partial class MainWindow : Window
         {
             _selectedAudio = dialog.FileName;
             SelectedAudioText.Text = Path.GetFileName(_selectedAudio);
+            _audioTrim = null;
+            AudioTrimText.Text = "";
+            TrimAudioButton.IsEnabled = true;
+        }
+    }
+
+    // --- Éditeur de recadrage temporel ---
+
+    private void TrimVideoButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedFile is null) return;
+        var trimWindow = new TrimWindow(_selectedFile) { Owner = this };
+        if (trimWindow.ShowDialog() == true && trimWindow.Result is not null)
+        {
+            _videoTrim = trimWindow.Result;
+            VideoTrimText.Text = $"{_videoTrim.StartSeconds:F1}s -> {_videoTrim.EndSeconds:F1}s ({_videoTrim.Duration:F1}s)";
+        }
+    }
+
+    private void TrimAudioButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedAudio is null) return;
+        var trimWindow = new TrimWindow(_selectedAudio) { Owner = this };
+        if (trimWindow.ShowDialog() == true && trimWindow.Result is not null)
+        {
+            _audioTrim = trimWindow.Result;
+            AudioTrimText.Text = $"{_audioTrim.StartSeconds:F1}s -> {_audioTrim.EndSeconds:F1}s ({_audioTrim.Duration:F1}s)";
         }
     }
 
@@ -250,6 +295,11 @@ public partial class MainWindow : Window
         var orientation = OrientationLandscape.IsChecked == true
             ? Orientation.Landscape16x9 : Orientation.Portrait9x16;
 
+        if (_videoTrim is not null)
+            Log($"Recadrage temporel : {_videoTrim.StartSeconds:F1}s -> {_videoTrim.EndSeconds:F1}s");
+        if (orientation == Orientation.Portrait9x16)
+            Log("Format portrait : durée limitée à 60s max.");
+
         var selected = new List<PlatformProfile>();
         if (TikTokCheck.IsChecked == true) selected.Add(PlatformProfiles.TikTok);
         if (InstagramCheck.IsChecked == true) selected.Add(PlatformProfiles.InstagramReels);
@@ -263,7 +313,7 @@ public partial class MainWindow : Window
             StatusText.Text = $"Encodage pour {profile.Name}...";
             Log($"Préparation pour {profile.Name}...");
             await _processor.ConvertToPortraitAsync(inputFile, outFile, profile, quality, info, orientation,
-                new Progress<string>(Log), MakePercentProgress());
+                _videoTrim, new Progress<string>(Log), MakePercentProgress());
             Log($"  -> {outFile}");
         }
 
@@ -276,6 +326,8 @@ public partial class MainWindow : Window
         _lastOutputDir = outputDir;
 
         Log($"Image : {Path.GetFileName(imagePath)} — Son : {Path.GetFileName(audioPath)}");
+        if (_audioTrim is not null)
+            Log($"Recadrage temporel du son : {_audioTrim.StartSeconds:F1}s -> {_audioTrim.EndSeconds:F1}s");
 
         if (ExtractAudioCheck.IsChecked == true)
         {
@@ -291,6 +343,13 @@ public partial class MainWindow : Window
         var quality = QualityTrueLossless.IsChecked == true ? QualityMode.TrueLossless : QualityMode.VisuallyLossless;
         var orientation = OrientationLandscape.IsChecked == true
             ? Orientation.Landscape16x9 : Orientation.Portrait9x16;
+        var motion = GetMotionSettings();
+
+        if (motion.IsAnyEnabled)
+            Log($"Mouvement activé : Ken Burns={motion.KenBurnsEnabled} (intensité {motion.KenBurnsIntensity01:P0}), " +
+                $"Réactif aux basses={motion.BassReactiveEnabled} (sensibilité {motion.BassSensitivity01:P0})");
+        if (orientation == Orientation.Portrait9x16)
+            Log("Format portrait : durée limitée à 60s max.");
 
         string? firstOutFile = null;
 
@@ -299,7 +358,7 @@ public partial class MainWindow : Window
             var masterOut = Path.Combine(outputDir, "master_sans_perte.mkv");
             StatusText.Text = "Génération du fichier maître 100% sans perte...";
             Log("Génération du fichier maître (vidéo CRF 0 + audio FLAC intégré)...");
-            await _processor.CreateLosslessMasterAsync(imagePath, audioPath, masterOut, orientation,
+            await _processor.CreateLosslessMasterAsync(imagePath, audioPath, masterOut, orientation, motion,
                 new Progress<string>(Log), MakePercentProgress());
             Log($"  -> {masterOut}");
             firstOutFile ??= masterOut;
@@ -317,7 +376,7 @@ public partial class MainWindow : Window
             StatusText.Text = $"Génération pour {profile.Name}...";
             Log($"Génération de la vidéo (image + son) pour {profile.Name}...");
             await _processor.CreateFromImageAndAudioAsync(imagePath, audioPath, outFile, profile, quality, orientation,
-                new Progress<string>(Log), MakePercentProgress());
+                motion, _audioTrim, new Progress<string>(Log), MakePercentProgress());
             Log($"  -> {outFile}");
         }
 

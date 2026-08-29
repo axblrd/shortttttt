@@ -20,6 +20,24 @@ maintenu à jour automatiquement.
 5. **Barre de progression avec pourcentage réel** sur toutes les opérations
    (calculé en comparant la progression ffmpeg à la durée totale attendue),
    et ouverture automatique du résultat à la fin pour le visualiser tout de suite.
+6. **Mouvement de caméra et réactivité à la musique** (mode image + son) :
+   - **Ken Burns** : zoom lent continu + léger travelling, intensité réglable.
+   - **Réactif aux basses** : le zoom pulse sur les basses/kicks détectés dans
+     l'audio (analyse de l'énergie de la bande ~80Hz par fenêtres de 50ms,
+     détection de pics), sensibilité réglable. Ce n'est pas une détection de
+     rythme musicale à proprement parler (pas de BPM/beat-tracking), mais une
+     réaction réelle à l'énergie des basses — efficace sur des morceaux avec
+     des basses/kicks marqués, moins spectaculaire sur des morceaux sans basse nette.
+   - Les deux se combinent. Techniquement : l'image est mise à l'échelle avec
+     30% de marge ("overscan"), puis zoomée/déplacée dynamiquement par des
+     expressions ffmpeg évaluées image par image (`eval=frame`), avant un
+     recadrage final — jamais de bord vide visible, même en mouvement.
+7. **Limite automatique à 60 secondes pour les sorties portrait** (shorts/
+   reels/stories), pour rester dans les contraintes des plateformes. Le format
+   paysage et le fichier maître ne sont pas limités.
+8. **Éditeur de recadrage temporel** ("Rogner...") : une fenêtre simple avec
+   aperçu vidéo/audio et deux curseurs (début/fin) pour choisir la partie à
+   garder avant traitement — utile pour réduire un fichier trop long.
 1. **Vérifie et met à jour FFmpeg** au lancement (dernière build statique Windows
    depuis les releases GitHub officielles de BtbN/FFmpeg-Builds — gratuites, à
    jour en continu, licence GPL "full" avec tous les codecs).
