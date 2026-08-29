@@ -14,8 +14,12 @@ maintenu à jour automatiquement.
    garder pour toi, à ne surtout pas envoyer tel quel sur TikTok/Instagram (voir
    plus bas pourquoi). Il y a aussi un **mode "commande simple"** qui reproduit
    exactement `ffmpeg -loop 1 -i image -i son -shortest -c:a copy -strict -2
-   sortie.mp4` : aucun ré-encodage de l'audio (copie brute du flux d'origine),
-   et tu choisis toi-même le nom du fichier de sortie via une boîte de dialogue.
+   sortie.mp4` : aucun ré-encodage de l'audio (copie brute du flux d'origine).
+   Ce mode se fait en deux étapes : "Choisir le nom du fichier..." puis
+   "Démarrer" — pour laisser le temps de vérifier avant de lancer l'encodage.
+5. **Barre de progression avec pourcentage réel** sur toutes les opérations
+   (calculé en comparant la progression ffmpeg à la durée totale attendue),
+   et ouverture automatique du résultat à la fin pour le visualiser tout de suite.
 1. **Vérifie et met à jour FFmpeg** au lancement (dernière build statique Windows
    depuis les releases GitHub officielles de BtbN/FFmpeg-Builds — gratuites, à
    jour en continu, licence GPL "full" avec tous les codecs).

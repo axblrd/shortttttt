@@ -14,6 +14,7 @@ public partial class MainWindow : Window
     private string? _selectedAudio;
     private string? _customOutputDir;
     private string? _lastOutputDir;
+    private string? _simpleOutputPath;
 
     public MainWindow()
     {
@@ -85,7 +86,6 @@ public partial class MainWindow : Window
 
     private void ChooseOutputButton_Click(object sender, RoutedEventArgs e)
     {
-        // OpenFolderDialog est disponible nativement depuis .NET 8 (WPF).
         var dialog = new OpenFolderDialog { Title = "Choisir le dossier de sortie" };
         if (dialog.ShowDialog() == true)
         {
@@ -99,6 +99,64 @@ public partial class MainWindow : Window
         if (_lastOutputDir is not null && Directory.Exists(_lastOutputDir))
             Process.Start("explorer.exe", _lastOutputDir);
     }
+
+    // --- Mode "commande simple" : nommer puis démarrer séparément ---
+
+    private void ChooseSimpleOutputButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedImage is null || _selectedAudio is null)
+        {
+            Log("Sélectionne d'abord une image et un son.");
+            return;
+        }
+
+        var saveDialog = new SaveFileDialog
+        {
+            Title = "Nommer la vidéo à créer",
+            Filter = "Vidéo MP4|*.mp4",
+            FileName = Path.GetFileNameWithoutExtension(_selectedAudio) + ".mp4",
+            InitialDirectory = string.IsNullOrEmpty(_customOutputDir)
+                ? Path.GetDirectoryName(_selectedAudio)
+                : _customOutputDir
+        };
+        if (saveDialog.ShowDialog() != true) return;
+
+        _simpleOutputPath = saveDialog.FileName;
+        SimpleOutputText.Text = _simpleOutputPath;
+        StartSimpleCombineButton.IsEnabled = true;
+    }
+
+    private async void StartSimpleCombineButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedImage is null || _selectedAudio is null || _simpleOutputPath is null)
+        {
+            Log("Choisis d'abord une image, un son, puis le nom du fichier de sortie.");
+            return;
+        }
+
+        SetBusy(true, "Combinaison image + audio...");
+        try
+        {
+            Log($"Combinaison de {Path.GetFileName(_selectedImage)} + {Path.GetFileName(_selectedAudio)}...");
+            await _processor.CreateSimpleFromImageAndAudioAsync(
+                _selectedImage, _selectedAudio, _simpleOutputPath,
+                new Progress<string>(Log), MakePercentProgress());
+            Log($"  -> {_simpleOutputPath}");
+
+            _lastOutputDir = Path.GetDirectoryName(_simpleOutputPath);
+            FinishAndOpen(_lastOutputDir!, _simpleOutputPath, new List<PlatformProfile>());
+        }
+        catch (Exception ex)
+        {
+            Log("ERREUR : " + ex.Message);
+        }
+        finally
+        {
+            SetBusy(false, "Terminé.");
+        }
+    }
+
+    // --- Pipelines principaux ---
 
     private async void ProcessButton_Click(object sender, RoutedEventArgs e)
     {
@@ -133,53 +191,22 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void SimpleCombineButton_Click(object sender, RoutedEventArgs e)
+    /// <summary>Crée un IProgress&lt;int&gt; qui met à jour la barre + le texte de pourcentage.</summary>
+    private IProgress<int> MakePercentProgress() => new Progress<int>(percent =>
     {
-        if (_selectedImage is null || _selectedAudio is null)
-        {
-            Log("Sélectionne une image et un son.");
-            return;
-        }
-
-        var saveDialog = new SaveFileDialog
-        {
-            Title = "Nommer la vidéo à créer",
-            Filter = "Vidéo MP4|*.mp4",
-            FileName = Path.GetFileNameWithoutExtension(_selectedAudio) + ".mp4",
-            InitialDirectory = string.IsNullOrEmpty(_customOutputDir)
-                ? Path.GetDirectoryName(_selectedAudio)
-                : _customOutputDir
-        };
-        if (saveDialog.ShowDialog() != true) return;
-
-        var outputPath = saveDialog.FileName;
-
-        SetBusy(true, "Combinaison image + audio...");
-        try
-        {
-            Log($"Combinaison de {Path.GetFileName(_selectedImage)} + {Path.GetFileName(_selectedAudio)}...");
-            await _processor.CreateSimpleFromImageAndAudioAsync(_selectedImage, _selectedAudio, outputPath,
-                new Progress<string>(Log));
-            Log($"  -> {outputPath}");
-
-            _lastOutputDir = Path.GetDirectoryName(outputPath);
-            FinishAndOpen(_lastOutputDir!, outputPath, new List<PlatformProfile>());
-        }
-        catch (Exception ex)
-        {
-            Log("ERREUR : " + ex.Message);
-        }
-        finally
-        {
-            SetBusy(false, "Terminé.");
-        }
-    }
+        ProgressBarCtrl.Value = percent;
+        ProgressPercentText.Text = $"{percent}%";
+    });
 
     private void SetBusy(bool busy, string status)
     {
         ProcessButton.IsEnabled = !busy;
+        StartSimpleCombineButton.IsEnabled = !busy && _simpleOutputPath is not null;
         OpenOutputButton.IsEnabled = !busy && _lastOutputDir is not null;
         ProgressBarCtrl.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        ProgressPercentText.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        ProgressBarCtrl.Value = 0;
+        ProgressPercentText.Text = "0%";
         StatusText.Text = status;
     }
 
@@ -211,8 +238,9 @@ public partial class MainWindow : Window
             var format = AudioWav.IsChecked == true ? LosslessAudioFormat.Wav : LosslessAudioFormat.Flac;
             var ext = format == LosslessAudioFormat.Wav ? "wav" : "flac";
             var audioOut = Path.Combine(outputDir, $"audio_original.{ext}");
+            StatusText.Text = "Extraction de l'audio d'origine...";
             Log("Extraction de l'audio d'origine sans perte...");
-            await _processor.ExtractLosslessAudioAsync(inputFile, audioOut, format);
+            await _processor.ExtractLosslessAudioAsync(inputFile, audioOut, format, MakePercentProgress());
             Log($"  -> {audioOut}");
         }
 
@@ -235,7 +263,7 @@ public partial class MainWindow : Window
             StatusText.Text = $"Encodage pour {profile.Name}...";
             Log($"Préparation pour {profile.Name}...");
             await _processor.ConvertToPortraitAsync(inputFile, outFile, profile, quality, info, orientation,
-                new Progress<string>(Log));
+                new Progress<string>(Log), MakePercentProgress());
             Log($"  -> {outFile}");
         }
 
@@ -254,8 +282,9 @@ public partial class MainWindow : Window
             var format = AudioWav.IsChecked == true ? LosslessAudioFormat.Wav : LosslessAudioFormat.Flac;
             var ext = format == LosslessAudioFormat.Wav ? "wav" : "flac";
             var audioOut = Path.Combine(outputDir, $"audio_original.{ext}");
+            StatusText.Text = "Copie sans perte du son d'origine...";
             Log("Copie sans perte du son d'origine...");
-            await _processor.ExtractLosslessAudioAsync(audioPath, audioOut, format);
+            await _processor.ExtractLosslessAudioAsync(audioPath, audioOut, format, MakePercentProgress());
             Log($"  -> {audioOut}");
         }
 
@@ -265,15 +294,13 @@ public partial class MainWindow : Window
 
         string? firstOutFile = null;
 
-        // Fichier maître 100% sans perte : image + audio FLAC intégré, vidéo CRF 0, conteneur .mkv
-        // (le FLAC n'est fiable dans un conteneur que dans .mkv, pas garanti en .mp4 selon les lecteurs).
         if (FlacMasterCheck.IsChecked == true)
         {
             var masterOut = Path.Combine(outputDir, "master_sans_perte.mkv");
             StatusText.Text = "Génération du fichier maître 100% sans perte...";
             Log("Génération du fichier maître (vidéo CRF 0 + audio FLAC intégré)...");
             await _processor.CreateLosslessMasterAsync(imagePath, audioPath, masterOut, orientation,
-                new Progress<string>(Log));
+                new Progress<string>(Log), MakePercentProgress());
             Log($"  -> {masterOut}");
             firstOutFile ??= masterOut;
         }
@@ -290,7 +317,7 @@ public partial class MainWindow : Window
             StatusText.Text = $"Génération pour {profile.Name}...";
             Log($"Génération de la vidéo (image + son) pour {profile.Name}...");
             await _processor.CreateFromImageAndAudioAsync(imagePath, audioPath, outFile, profile, quality, orientation,
-                new Progress<string>(Log));
+                new Progress<string>(Log), MakePercentProgress());
             Log($"  -> {outFile}");
         }
 
@@ -302,8 +329,6 @@ public partial class MainWindow : Window
         Log("Terminé. Ouverture du dossier de sortie...");
         Process.Start("explorer.exe", outputDir);
 
-        // Ouvre directement le premier fichier généré dans le lecteur vidéo par défaut,
-        // pour pouvoir le visualiser immédiatement sans avoir à le chercher.
         if (fileToPreview is not null && File.Exists(fileToPreview))
         {
             Log($"Lecture de {Path.GetFileName(fileToPreview)}...");

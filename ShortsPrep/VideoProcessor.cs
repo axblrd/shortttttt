@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ShortsPrep;
 
@@ -23,6 +25,8 @@ public record VideoInfo(int Width, int Height, double DurationSeconds, string Vi
 
 public class VideoProcessor
 {
+    private static readonly Regex TimeRegex = new(@"time=(\d+):(\d+):(\d+\.\d+)", RegexOptions.Compiled);
+
     /// <summary>Interroge ffprobe pour connaître les caractéristiques du fichier source.</summary>
     public async Task<VideoInfo> ProbeAsync(string inputPath)
     {
@@ -58,12 +62,15 @@ public class VideoProcessor
     /// Extrait la piste audio d'origine, intégralement sans perte, dans un fichier séparé
     /// (WAV PCM ou FLAC). C'est la copie "maître" à garder pour un usage musical.
     /// </summary>
-    public async Task ExtractLosslessAudioAsync(string inputPath, string outputPath, LosslessAudioFormat format)
+    public async Task ExtractLosslessAudioAsync(
+        string inputPath, string outputPath, LosslessAudioFormat format,
+        IProgress<int>? percentProgress = null)
     {
+        var info = await ProbeAsync(inputPath);
         // -vn : pas de vidéo. Codec PCM (wav) ou FLAC : compression sans perte, bit-exact.
         var codecArgs = format == LosslessAudioFormat.Wav ? "-c:a pcm_s24le" : "-c:a flac -compression_level 8";
         var args = $"-y -i \"{inputPath}\" -vn {codecArgs} \"{outputPath}\"";
-        await RunAsync(FfmpegManager.FfmpegExe, args);
+        await RunAsync(FfmpegManager.FfmpegExe, args, info.DurationSeconds, percentProgress);
     }
 
     /// <summary>
@@ -78,7 +85,8 @@ public class VideoProcessor
         QualityMode quality,
         VideoInfo info,
         Orientation orientation,
-        IProgress<string>? progress = null)
+        IProgress<string>? progress = null,
+        IProgress<int>? percentProgress = null)
     {
         var (tw, th) = GetDimensions(orientation);
         string videoFilter = BuildAspectFilter(info, tw, th);
@@ -92,26 +100,21 @@ public class VideoProcessor
             _ => "-c:v libx264 -preset slow -crf 16 -pix_fmt yuv420p"
         };
 
-        // Si on copie le flux vidéo tel quel, aucun filtre ne peut être appliqué.
         bool copyingVideo = videoCodecArgs.Contains("copy");
         string filterArgs = copyingVideo ? "" : $"-vf \"{videoFilter}\"";
 
-        // Audio : ré-encodage AAC haut débit pour la compatibilité des plateformes
-        // (elles ré-encodent de toute façon côté serveur). La copie maître intacte
-        // (WAV/FLAC) est produite séparément par ExtractLosslessAudioAsync.
         string audioArgs = info.HasAudio ? "-c:a aac -b:a 320k -ar 48000" : "-an";
 
         var args = $"-y -i \"{inputPath}\" {filterArgs} {videoCodecArgs} {audioArgs} " +
                    $"-movflags +faststart \"{outputPath}\"";
 
         progress?.Report($"Encodage pour {profile.Name}...");
-        await RunAsync(FfmpegManager.FfmpegExe, args);
+        await RunAsync(FfmpegManager.FfmpegExe, args, info.DurationSeconds, percentProgress);
     }
 
     /// <summary>
     /// Crée une vidéo à partir d'une image fixe et d'une piste audio : la durée de la
-    /// vidéo est exactement calée sur la durée de l'audio (utile pour poster un morceau
-    /// de musique avec une pochette/visuel en image fixe).
+    /// vidéo est exactement calée sur la durée de l'audio.
     /// </summary>
     public async Task CreateFromImageAndAudioAsync(
         string imagePath,
@@ -120,11 +123,11 @@ public class VideoProcessor
         PlatformProfile profile,
         QualityMode quality,
         Orientation orientation,
-        IProgress<string>? progress = null)
+        IProgress<string>? progress = null,
+        IProgress<int>? percentProgress = null)
     {
-        // On probe l'image comme une "vidéo" d'une seule frame pour connaître ses dimensions
-        // et réutiliser exactement la même logique de recadrage/format.
         var imageInfo = await ProbeAsync(imagePath);
+        var audioInfo = await ProbeAsync(audioPath);
         var (tw, th) = GetDimensions(orientation);
         string videoFilter = BuildAspectFilter(imageInfo, tw, th);
 
@@ -132,8 +135,6 @@ public class VideoProcessor
             ? "-c:v libx264 -preset veryslow -crf 0 -tune stillimage -pix_fmt yuv420p"
             : "-c:v libx264 -preset slow -crf 16 -tune stillimage -pix_fmt yuv420p";
 
-        // -loop 1 : boucle l'image indéfiniment ; -shortest : coupe dès que l'audio se termine.
-        // C'est ce qui garantit une durée finale strictement égale à celle du son.
         var args =
             $"-y -loop 1 -i \"{imagePath}\" -i \"{audioPath}\" " +
             $"-vf \"{videoFilter}\" {videoCodecArgs} " +
@@ -141,23 +142,23 @@ public class VideoProcessor
             $"-shortest -movflags +faststart \"{outputPath}\"";
 
         progress?.Report($"Création de la vidéo image + audio pour {profile.Name}...");
-        await RunAsync(FfmpegManager.FfmpegExe, args);
+        await RunAsync(FfmpegManager.FfmpegExe, args, audioInfo.DurationSeconds, percentProgress);
     }
 
     /// <summary>
     /// Fichier "maître" 100% sans perte : image fixe + audio intégré en FLAC (sans perte,
-    /// bit-exact), vidéo encodée en CRF 0 (aucune perte visuelle ni mathématique).
-    /// Conteneur .mkv (le FLAC n'est pas fiable dans un .mp4 selon les lecteurs/plateformes).
-    /// Durée exactement calée sur celle de l'audio.
+    /// bit-exact), vidéo encodée en CRF 0. Conteneur .mkv.
     /// </summary>
     public async Task CreateLosslessMasterAsync(
         string imagePath,
         string audioPath,
         string outputPath,
         Orientation orientation,
-        IProgress<string>? progress = null)
+        IProgress<string>? progress = null,
+        IProgress<int>? percentProgress = null)
     {
         var imageInfo = await ProbeAsync(imagePath);
+        var audioInfo = await ProbeAsync(audioPath);
         var (tw, th) = GetDimensions(orientation);
         string videoFilter = BuildAspectFilter(imageInfo, tw, th);
 
@@ -169,28 +170,28 @@ public class VideoProcessor
             $"-shortest \"{outputPath}\"";
 
         progress?.Report("Encodage du fichier maître (sans perte)...");
-        await RunAsync(FfmpegManager.FfmpegExe, args);
+        await RunAsync(FfmpegManager.FfmpegExe, args, audioInfo.DurationSeconds, percentProgress);
     }
 
     /// <summary>
     /// Combine une image et un son en vidéo, exactement selon la commande de référence :
     /// ffmpeg -loop 1 -i image -i son -shortest -c:a copy -strict -2 sortie.mp4
-    /// Aucun ré-encodage de l'audio (copie brute du flux d'origine, bit pour bit) ;
-    /// la vidéo utilise l'encodeur par défaut de ffmpeg pour le conteneur choisi.
-    /// Durée exactement calée sur celle du son (-shortest).
+    /// Aucun ré-encodage de l'audio (copie brute du flux d'origine, bit pour bit).
     /// </summary>
     public async Task CreateSimpleFromImageAndAudioAsync(
         string imagePath,
         string audioPath,
         string outputPath,
-        IProgress<string>? progress = null)
+        IProgress<string>? progress = null,
+        IProgress<int>? percentProgress = null)
     {
+        var audioInfo = await ProbeAsync(audioPath);
         var args =
             $"-y -loop 1 -i \"{imagePath}\" -i \"{audioPath}\" " +
             $"-shortest -c:a copy -strict -2 \"{outputPath}\"";
 
         progress?.Report("Combinaison image + audio (commande simple, audio non ré-encodé)...");
-        await RunAsync(FfmpegManager.FfmpegExe, args);
+        await RunAsync(FfmpegManager.FfmpegExe, args, audioInfo.DurationSeconds, percentProgress);
     }
 
     private static (int Width, int Height) GetDimensions(Orientation orientation) => orientation switch
@@ -209,8 +210,7 @@ public class VideoProcessor
 
     /// <summary>
     /// Construit le filtre ffmpeg : recadrage centré pour remplir le cadre cible sans
-    /// déformer l'image (comportement "crop-to-fill"). Si la source a un ratio plus
-    /// étroit que la cible, on complète avec un fond flou plutôt que d'étirer l'image.
+    /// déformer l'image. Fond flou + image centrée si la source est plus étroite que la cible.
     /// </summary>
     private static string BuildAspectFilter(VideoInfo info, int tw, int th)
     {
@@ -219,12 +219,10 @@ public class VideoProcessor
 
         if (sourceRatio > targetRatio)
         {
-            // Source plus large que la cible : crop horizontal centré, puis scale.
             return $"crop=ih*{tw}/{th}:ih,scale={tw}:{th}:flags=lanczos";
         }
         else if (sourceRatio < targetRatio)
         {
-            // Source plus étroite que la cible : fond flou + image centrée.
             return
                 $"split[bg][fg];" +
                 $"[bg]scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th},gblur=sigma=20[bg2];" +
@@ -237,7 +235,14 @@ public class VideoProcessor
         }
     }
 
-    private static async Task RunAsync(string exe, string args)
+    /// <summary>
+    /// Lance ffmpeg et suit sa progression en temps réel en parsant les lignes "time=" de
+    /// sa sortie stderr, comparées à la durée totale attendue, pour reporter un pourcentage.
+    /// </summary>
+    private static async Task RunAsync(
+        string exe, string args,
+        double? totalDurationSeconds = null,
+        IProgress<int>? percentProgress = null)
     {
         var psi = new ProcessStartInfo(exe, args)
         {
@@ -246,11 +251,38 @@ public class VideoProcessor
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        using var process = Process.Start(psi)!;
-        string stderr = await process.StandardError.ReadToEndAsync();
+
+        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        var stderrLog = new StringBuilder();
+
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is null) return;
+            stderrLog.AppendLine(e.Data);
+
+            if (totalDurationSeconds is > 0 && percentProgress is not null)
+            {
+                var m = TimeRegex.Match(e.Data);
+                if (m.Success)
+                {
+                    double h = double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+                    double min = double.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture);
+                    double sec = double.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture);
+                    double current = h * 3600 + min * 60 + sec;
+                    int percent = (int)Math.Clamp(current / totalDurationSeconds.Value * 100.0, 0, 100);
+                    percentProgress.Report(percent);
+                }
+            }
+        };
+
+        process.Start();
+        process.BeginErrorReadLine();
         await process.WaitForExitAsync();
+
         if (process.ExitCode != 0)
-            throw new InvalidOperationException($"FFmpeg a échoué (code {process.ExitCode}) :\n{stderr}");
+            throw new InvalidOperationException($"FFmpeg a échoué (code {process.ExitCode}) :\n{stderrLog}");
+
+        percentProgress?.Report(100);
     }
 
     private static async Task<string> RunAndCaptureAsync(string exe, string args)
