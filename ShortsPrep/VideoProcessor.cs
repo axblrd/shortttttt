@@ -144,6 +144,34 @@ public class VideoProcessor
         await RunAsync(FfmpegManager.FfmpegExe, args);
     }
 
+    /// <summary>
+    /// Fichier "maître" 100% sans perte : image fixe + audio intégré en FLAC (sans perte,
+    /// bit-exact), vidéo encodée en CRF 0 (aucune perte visuelle ni mathématique).
+    /// Conteneur .mkv (le FLAC n'est pas fiable dans un .mp4 selon les lecteurs/plateformes).
+    /// Durée exactement calée sur celle de l'audio.
+    /// </summary>
+    public async Task CreateLosslessMasterAsync(
+        string imagePath,
+        string audioPath,
+        string outputPath,
+        Orientation orientation,
+        IProgress<string>? progress = null)
+    {
+        var imageInfo = await ProbeAsync(imagePath);
+        var (tw, th) = GetDimensions(orientation);
+        string videoFilter = BuildAspectFilter(imageInfo, tw, th);
+
+        var args =
+            $"-y -loop 1 -i \"{imagePath}\" -i \"{audioPath}\" " +
+            $"-vf \"{videoFilter}\" " +
+            $"-c:v libx264 -preset veryslow -crf 0 -tune stillimage -pix_fmt yuv420p " +
+            $"-c:a flac -compression_level 8 " +
+            $"-shortest \"{outputPath}\"";
+
+        progress?.Report("Encodage du fichier maître (sans perte)...");
+        await RunAsync(FfmpegManager.FfmpegExe, args);
+    }
+
     private static (int Width, int Height) GetDimensions(Orientation orientation) => orientation switch
     {
         Orientation.Portrait9x16 => (1080, 1920),

@@ -8,7 +8,11 @@ maintenu à jour automatiquement.
 
 0. **Deux modes en entrée** : soit tu pars d'une vidéo existante, soit tu choisis
    une **image fixe + un son** — la vidéo générée dure alors exactement la durée
-   du son (utile pour poster un morceau avec une pochette/visuel statique).
+   du son (utile pour poster un morceau avec une pochette/visuel statique). En
+   mode image + son, un **fichier maître 100% sans perte** peut aussi être généré
+   (vidéo CRF 0 + audio FLAC intégré, conteneur `.mkv`) — c'est le fichier à
+   garder pour toi, à ne surtout pas envoyer tel quel sur TikTok/Instagram (voir
+   plus bas pourquoi).
 1. **Vérifie et met à jour FFmpeg** au lancement (dernière build statique Windows
    depuis les releases GitHub officielles de BtbN/FFmpeg-Builds — gratuites, à
    jour en continu, licence GPL "full" avec tous les codecs).
@@ -62,6 +66,12 @@ garantit :
 - l'audio intégré dans le MP4 envoyé aux plateformes est encodé en AAC 320kbps
   (le maximum utile — au-delà, l'oreille ne fait plus la différence et les
   plateformes replafonnent de toute façon).
+
+**Sur le fichier maître `.mkv` (FLAC + CRF 0)** : ce format n'est pas accepté
+par TikTok/Instagram/YouTube Shorts (ils veulent du .mp4, H.264/AAC). Il sert
+uniquement d'archive personnelle sans aucune perte, ou pour être réencodé plus
+tard sans repartir de zéro. Pour l'upload, utilise les fichiers `.mp4` générés
+à côté.
 
 ## Idées pour la suite (V2)
 

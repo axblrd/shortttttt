@@ -1,7 +1,7 @@
 <Window x:Class="ShortsPrep.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ShortsPrep — Tututte" Height="640" Width="820"
+        Title="ShortsPrep — Tututte" Height="760" Width="820"
         Background="{StaticResource BgBrush}"
         FontFamily="Segoe UI">
     <Grid Margin="24">
@@ -10,7 +10,9 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
@@ -46,13 +48,15 @@
                         <TextBlock x:Name="SelectedImageText" Text="Aucune image sélectionnée"
                                    Foreground="{StaticResource SubTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <Button x:Name="BrowseAudioButton" Content="Choisir un son..." Padding="12,6" Click="BrowseAudioButton_Click"/>
                         <TextBlock x:Name="SelectedAudioText" Text="Aucun son sélectionné"
                                    Foreground="{StaticResource SubTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
+                    <CheckBox x:Name="FlacMasterCheck" Content="Créer aussi un fichier maître 100% sans perte (image + audio FLAC intégré, .mkv)"
+                              Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,4,0,4"/>
                     <TextBlock Text="La vidéo générée durera exactement la durée du son."
-                               Foreground="{StaticResource SubTextBrush}" FontStyle="Italic" Margin="0,8,0,0"/>
+                               Foreground="{StaticResource SubTextBrush}" FontStyle="Italic" Margin="0,4,0,0"/>
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -68,7 +72,7 @@
                                  Foreground="{StaticResource TextBrush}" GroupName="Orientation"/>
                 </StackPanel>
                 <Separator Margin="0,0,0,12"/>
-                <TextBlock Text="Qualité vidéo" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="Qualité vidéo (fichiers par plateforme)" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">
                     <RadioButton x:Name="QualityVisualLossless" Content="Visuellement sans perte (recommandé)"
                                  Foreground="{StaticResource TextBrush}" IsChecked="True" GroupName="Quality" Margin="0,0,20,0"/>
@@ -92,7 +96,7 @@
         <!-- Plateformes -->
         <Border Grid.Row="3" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
             <StackPanel>
-                <TextBlock Text="Plateformes à préparer" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="Plateformes à préparer (fichiers .mp4 compatibles)" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">
                     <CheckBox x:Name="TikTokCheck" Content="TikTok" IsChecked="True" Foreground="{StaticResource TextBrush}" Margin="0,0,20,0"/>
                     <CheckBox x:Name="InstagramCheck" Content="Instagram Reels" IsChecked="True" Foreground="{StaticResource TextBrush}" Margin="0,0,20,0"/>
@@ -101,15 +105,34 @@
             </StackPanel>
         </Border>
 
+        <!-- Emplacement de sortie -->
+        <Border Grid.Row="4" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Dossier de sortie :" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <Button x:Name="ChooseOutputButton" Content="Choisir..." Padding="12,6" Click="ChooseOutputButton_Click"/>
+                <TextBlock x:Name="OutputDirText" Text="(par défaut : à côté du fichier source)"
+                           Foreground="{StaticResource SubTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
         <!-- Journal -->
-        <Border Grid.Row="4" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="12" Margin="0,0,0,12">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Border Grid.Row="5" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+            <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                 <TextBlock x:Name="LogText" Foreground="{StaticResource SubTextBrush}" TextWrapping="Wrap" FontFamily="Consolas"/>
             </ScrollViewer>
         </Border>
 
+        <!-- Barre de progression -->
+        <StackPanel Grid.Row="6" Margin="0,0,0,12">
+            <ProgressBar x:Name="ProgressBarCtrl" Height="8" IsIndeterminate="True" Visibility="Collapsed"
+                         Foreground="{StaticResource AccentBrush}"/>
+            <TextBlock x:Name="StatusText" Text="" Foreground="{StaticResource SubTextBrush}" Margin="0,6,0,0"/>
+        </StackPanel>
+
         <!-- Actions -->
-        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="OpenOutputButton" Content="Ouvrir le dossier de sortie" Padding="14,10" Margin="0,0,10,0"
+                    Click="OpenOutputButton_Click" IsEnabled="False"/>
             <Button x:Name="ProcessButton" Content="Traiter et préparer" Padding="20,10" FontWeight="Bold"
                     Background="{StaticResource AccentBrush}" Foreground="White" Click="ProcessButton_Click"/>
         </StackPanel>
