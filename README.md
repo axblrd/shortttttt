@@ -6,6 +6,9 @@ maintenu à jour automatiquement.
 
 ## Ce qu'il fait
 
+0. **Deux modes en entrée** : soit tu pars d'une vidéo existante, soit tu choisis
+   une **image fixe + un son** — la vidéo générée dure alors exactement la durée
+   du son (utile pour poster un morceau avec une pochette/visuel statique).
 1. **Vérifie et met à jour FFmpeg** au lancement (dernière build statique Windows
    depuis les releases GitHub officielles de BtbN/FFmpeg-Builds — gratuites, à
    jour en continu, licence GPL "full" avec tous les codecs).

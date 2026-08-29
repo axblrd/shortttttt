@@ -20,18 +20,54 @@
                        Foreground="{StaticResource SubTextBrush}" VerticalAlignment="Bottom" Margin="8,0,0,3"/>
         </StackPanel>
 
-        <!-- Sélection du fichier -->
+        <!-- Mode source -->
         <Border Grid.Row="1" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
-            <StackPanel Orientation="Horizontal">
-                <Button x:Name="BrowseButton" Content="Choisir une vidéo..." Padding="12,6" Click="BrowseButton_Click"/>
-                <TextBlock x:Name="SelectedFileText" Text="Aucun fichier sélectionné"
-                           Foreground="{StaticResource SubTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <RadioButton x:Name="ModeVideoRadio" Content="Depuis une vidéo existante" GroupName="Mode"
+                                 Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,0,24,0"
+                                 Checked="ModeRadio_Changed"/>
+                    <RadioButton x:Name="ModeImageAudioRadio" Content="Depuis une image + un son"
+                                 GroupName="Mode" Foreground="{StaticResource TextBrush}"
+                                 Checked="ModeRadio_Changed"/>
+                </StackPanel>
+
+                <!-- Mode vidéo -->
+                <StackPanel x:Name="VideoModePanel" Orientation="Horizontal">
+                    <Button x:Name="BrowseButton" Content="Choisir une vidéo..." Padding="12,6" Click="BrowseButton_Click"/>
+                    <TextBlock x:Name="SelectedFileText" Text="Aucun fichier sélectionné"
+                               Foreground="{StaticResource SubTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Mode image + audio -->
+                <StackPanel x:Name="ImageAudioModePanel" Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button x:Name="BrowseImageButton" Content="Choisir une image..." Padding="12,6" Click="BrowseImageButton_Click"/>
+                        <TextBlock x:Name="SelectedImageText" Text="Aucune image sélectionnée"
+                                   Foreground="{StaticResource SubTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="BrowseAudioButton" Content="Choisir un son..." Padding="12,6" Click="BrowseAudioButton_Click"/>
+                        <TextBlock x:Name="SelectedAudioText" Text="Aucun son sélectionné"
+                                   Foreground="{StaticResource SubTextBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="La vidéo générée durera exactement la durée du son."
+                               Foreground="{StaticResource SubTextBrush}" FontStyle="Italic" Margin="0,8,0,0"/>
+                </StackPanel>
             </StackPanel>
         </Border>
 
         <!-- Options qualité -->
         <Border Grid.Row="2" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
             <StackPanel>
+                <TextBlock Text="Format de sortie" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <RadioButton x:Name="OrientationPortrait" Content="Portrait 9:16 (shorts / reels / stories)"
+                                 Foreground="{StaticResource TextBrush}" IsChecked="True" GroupName="Orientation" Margin="0,0,20,0"/>
+                    <RadioButton x:Name="OrientationLandscape" Content="Paysage 16:9 (format classique)"
+                                 Foreground="{StaticResource TextBrush}" GroupName="Orientation"/>
+                </StackPanel>
+                <Separator Margin="0,0,0,12"/>
                 <TextBlock Text="Qualité vidéo" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">
                     <RadioButton x:Name="QualityVisualLossless" Content="Visuellement sans perte (recommandé)"

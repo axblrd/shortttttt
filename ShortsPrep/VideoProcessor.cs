@@ -17,6 +17,8 @@ public enum QualityMode
 
 public enum LosslessAudioFormat { Wav, Flac }
 
+public enum Orientation { Portrait9x16, Landscape16x9 }
+
 public record VideoInfo(int Width, int Height, double DurationSeconds, string VideoCodec, bool HasAudio);
 
 public class VideoProcessor
@@ -65,7 +67,7 @@ public class VideoProcessor
     }
 
     /// <summary>
-    /// Convertit la vidéo au format portrait 9:16 pour le short/reel/story, en visant
+    /// Convertit la vidéo au format choisi (portrait 9:16 ou paysage 16:9), en visant
     /// la meilleure qualité possible, tout en réintégrant l'audio d'origine sans le
     /// ré-encoder inutilement plus d'une fois (copy du flux audio quand le conteneur le permet).
     /// </summary>
@@ -75,15 +77,17 @@ public class VideoProcessor
         PlatformProfile profile,
         QualityMode quality,
         VideoInfo info,
+        Orientation orientation,
         IProgress<string>? progress = null)
     {
-        string videoFilter = BuildPortraitFilter(info, profile);
+        var (tw, th) = GetDimensions(orientation);
+        string videoFilter = BuildAspectFilter(info, tw, th);
 
         string videoCodecArgs = quality switch
         {
             QualityMode.TrueLossless => "-c:v libx264 -preset veryslow -crf 0 -pix_fmt yuv420p",
             QualityMode.VisuallyLossless => "-c:v libx264 -preset slow -crf 16 -pix_fmt yuv420p",
-            QualityMode.CopyWhenPossible when IsAlreadyCompatible(info, profile)
+            QualityMode.CopyWhenPossible when IsAlreadyCompatible(info, tw, th)
                 => "-c:v copy",
             _ => "-c:v libx264 -preset slow -crf 16 -pix_fmt yuv420p"
         };
@@ -104,22 +108,63 @@ public class VideoProcessor
         await RunAsync(FfmpegManager.FfmpegExe, args);
     }
 
-    private static bool IsAlreadyCompatible(VideoInfo info, PlatformProfile profile)
+    /// <summary>
+    /// Crée une vidéo à partir d'une image fixe et d'une piste audio : la durée de la
+    /// vidéo est exactement calée sur la durée de l'audio (utile pour poster un morceau
+    /// de musique avec une pochette/visuel en image fixe).
+    /// </summary>
+    public async Task CreateFromImageAndAudioAsync(
+        string imagePath,
+        string audioPath,
+        string outputPath,
+        PlatformProfile profile,
+        QualityMode quality,
+        Orientation orientation,
+        IProgress<string>? progress = null)
     {
-        bool isPortrait = info.Height > info.Width;
+        // On probe l'image comme une "vidéo" d'une seule frame pour connaître ses dimensions
+        // et réutiliser exactement la même logique de recadrage/format.
+        var imageInfo = await ProbeAsync(imagePath);
+        var (tw, th) = GetDimensions(orientation);
+        string videoFilter = BuildAspectFilter(imageInfo, tw, th);
+
+        string videoCodecArgs = quality == QualityMode.TrueLossless
+            ? "-c:v libx264 -preset veryslow -crf 0 -tune stillimage -pix_fmt yuv420p"
+            : "-c:v libx264 -preset slow -crf 16 -tune stillimage -pix_fmt yuv420p";
+
+        // -loop 1 : boucle l'image indéfiniment ; -shortest : coupe dès que l'audio se termine.
+        // C'est ce qui garantit une durée finale strictement égale à celle du son.
+        var args =
+            $"-y -loop 1 -i \"{imagePath}\" -i \"{audioPath}\" " +
+            $"-vf \"{videoFilter}\" {videoCodecArgs} " +
+            $"-c:a aac -b:a 320k -ar 48000 " +
+            $"-shortest -movflags +faststart \"{outputPath}\"";
+
+        progress?.Report($"Création de la vidéo image + audio pour {profile.Name}...");
+        await RunAsync(FfmpegManager.FfmpegExe, args);
+    }
+
+    private static (int Width, int Height) GetDimensions(Orientation orientation) => orientation switch
+    {
+        Orientation.Portrait9x16 => (1080, 1920),
+        Orientation.Landscape16x9 => (1920, 1080),
+        _ => (1080, 1920)
+    };
+
+    private static bool IsAlreadyCompatible(VideoInfo info, int targetWidth, int targetHeight)
+    {
+        bool sameOrientation = (targetHeight > targetWidth) == (info.Height > info.Width);
         bool rightCodec = info.VideoCodec is "h264" or "hevc";
-        return isPortrait && rightCodec;
+        return sameOrientation && rightCodec;
     }
 
     /// <summary>
-    /// Construit le filtre ffmpeg : recadrage centré pour remplir le cadre 9:16 sans
-    /// déformer l'image (comportement "crop-to-fill", le plus courant pour les shorts).
-    /// Si la source est déjà plus étroite que 9:16, on complète avec un fond flou
-    /// plutôt que d'étirer l'image (pas de déformation visible).
+    /// Construit le filtre ffmpeg : recadrage centré pour remplir le cadre cible sans
+    /// déformer l'image (comportement "crop-to-fill"). Si la source a un ratio plus
+    /// étroit que la cible, on complète avec un fond flou plutôt que d'étirer l'image.
     /// </summary>
-    private static string BuildPortraitFilter(VideoInfo info, PlatformProfile profile)
+    private static string BuildAspectFilter(VideoInfo info, int tw, int th)
     {
-        int tw = profile.Width, th = profile.Height;
         double targetRatio = (double)tw / th;
         double sourceRatio = (double)info.Width / info.Height;
 
@@ -130,7 +175,7 @@ public class VideoProcessor
         }
         else if (sourceRatio < targetRatio)
         {
-            // Source plus étroite (ex: déjà verticale mais pas assez) : fond flou + image centrée.
+            // Source plus étroite que la cible : fond flou + image centrée.
             return
                 $"split[bg][fg];" +
                 $"[bg]scale={tw}:{th}:force_original_aspect_ratio=increase,crop={tw}:{th},gblur=sigma=20[bg2];" +
