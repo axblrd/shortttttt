@@ -12,7 +12,10 @@ maintenu à jour automatiquement.
    mode image + son, un **fichier maître 100% sans perte** peut aussi être généré
    (vidéo CRF 0 + audio FLAC intégré, conteneur `.mkv`) — c'est le fichier à
    garder pour toi, à ne surtout pas envoyer tel quel sur TikTok/Instagram (voir
-   plus bas pourquoi).
+   plus bas pourquoi). Il y a aussi un **mode "commande simple"** qui reproduit
+   exactement `ffmpeg -loop 1 -i image -i son -shortest -c:a copy -strict -2
+   sortie.mp4` : aucun ré-encodage de l'audio (copie brute du flux d'origine),
+   et tu choisis toi-même le nom du fichier de sortie via une boîte de dialogue.
 1. **Vérifie et met à jour FFmpeg** au lancement (dernière build statique Windows
    depuis les releases GitHub officielles de BtbN/FFmpeg-Builds — gratuites, à
    jour en continu, licence GPL "full" avec tous les codecs).

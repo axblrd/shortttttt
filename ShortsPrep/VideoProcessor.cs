@@ -172,6 +172,27 @@ public class VideoProcessor
         await RunAsync(FfmpegManager.FfmpegExe, args);
     }
 
+    /// <summary>
+    /// Combine une image et un son en vidéo, exactement selon la commande de référence :
+    /// ffmpeg -loop 1 -i image -i son -shortest -c:a copy -strict -2 sortie.mp4
+    /// Aucun ré-encodage de l'audio (copie brute du flux d'origine, bit pour bit) ;
+    /// la vidéo utilise l'encodeur par défaut de ffmpeg pour le conteneur choisi.
+    /// Durée exactement calée sur celle du son (-shortest).
+    /// </summary>
+    public async Task CreateSimpleFromImageAndAudioAsync(
+        string imagePath,
+        string audioPath,
+        string outputPath,
+        IProgress<string>? progress = null)
+    {
+        var args =
+            $"-y -loop 1 -i \"{imagePath}\" -i \"{audioPath}\" " +
+            $"-shortest -c:a copy -strict -2 \"{outputPath}\"";
+
+        progress?.Report("Combinaison image + audio (commande simple, audio non ré-encodé)...");
+        await RunAsync(FfmpegManager.FfmpegExe, args);
+    }
+
     private static (int Width, int Height) GetDimensions(Orientation orientation) => orientation switch
     {
         Orientation.Portrait9x16 => (1080, 1920),

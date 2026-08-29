@@ -133,6 +133,48 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void SimpleCombineButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedImage is null || _selectedAudio is null)
+        {
+            Log("Sélectionne une image et un son.");
+            return;
+        }
+
+        var saveDialog = new SaveFileDialog
+        {
+            Title = "Nommer la vidéo à créer",
+            Filter = "Vidéo MP4|*.mp4",
+            FileName = Path.GetFileNameWithoutExtension(_selectedAudio) + ".mp4",
+            InitialDirectory = string.IsNullOrEmpty(_customOutputDir)
+                ? Path.GetDirectoryName(_selectedAudio)
+                : _customOutputDir
+        };
+        if (saveDialog.ShowDialog() != true) return;
+
+        var outputPath = saveDialog.FileName;
+
+        SetBusy(true, "Combinaison image + audio...");
+        try
+        {
+            Log($"Combinaison de {Path.GetFileName(_selectedImage)} + {Path.GetFileName(_selectedAudio)}...");
+            await _processor.CreateSimpleFromImageAndAudioAsync(_selectedImage, _selectedAudio, outputPath,
+                new Progress<string>(Log));
+            Log($"  -> {outputPath}");
+
+            _lastOutputDir = Path.GetDirectoryName(outputPath);
+            FinishAndOpen(_lastOutputDir!, outputPath, new List<PlatformProfile>());
+        }
+        catch (Exception ex)
+        {
+            Log("ERREUR : " + ex.Message);
+        }
+        finally
+        {
+            SetBusy(false, "Terminé.");
+        }
+    }
+
     private void SetBusy(bool busy, string status)
     {
         ProcessButton.IsEnabled = !busy;

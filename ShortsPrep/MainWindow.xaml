@@ -55,8 +55,18 @@
                     </StackPanel>
                     <CheckBox x:Name="FlacMasterCheck" Content="Créer aussi un fichier maître 100% sans perte (image + audio FLAC intégré, .mkv)"
                               Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,4,0,4"/>
+                    <Separator Margin="0,8"/>
+                    <TextBlock Text="Méthode simple (commande directe, audio copié sans ré-encodage)"
+                               Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="SimpleCombineButton" Content="Combiner et nommer le fichier..." Padding="12,6"
+                                Click="SimpleCombineButton_Click"/>
+                        <TextBlock Text="Pas de recadrage/plateforme : juste image + son -&gt; vidéo, tel quel."
+                                   Foreground="{StaticResource SubTextBrush}" FontStyle="Italic"
+                                   Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    </StackPanel>
                     <TextBlock Text="La vidéo générée durera exactement la durée du son."
-                               Foreground="{StaticResource SubTextBrush}" FontStyle="Italic" Margin="0,4,0,0"/>
+                               Foreground="{StaticResource SubTextBrush}" FontStyle="Italic" Margin="0,8,0,0"/>
                 </StackPanel>
             </StackPanel>
         </Border>
