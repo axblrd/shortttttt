@@ -19,7 +19,7 @@
 
         <Border Grid.Row="1" Background="Black" CornerRadius="6">
             <MediaElement x:Name="Media" LoadedBehavior="Manual" UnloadedBehavior="Manual"
-                          Stretch="Uniform" MediaOpened="Media_MediaOpened"/>
+                          Stretch="Uniform" MediaOpened="Media_MediaOpened" MediaFailed="Media_MediaFailed"/>
         </Border>
 
         <StackPanel Grid.Row="2" Margin="0,12,0,0">
