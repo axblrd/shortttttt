@@ -1,9 +1,12 @@
 <Window x:Class="ShortsPrep.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ShortsPrep — Tututte" Height="820" Width="860"
+        Title="ShortsPrep — Tututte" Height="740" Width="880"
         Background="{StaticResource BgBrush}"
         FontFamily="Segoe UI">
+    <!-- Barre latérale de défilement toujours visible : la fenêtre est plus courte que le
+         contenu total (beaucoup de sections), donc tout défile plutôt que de dépasser l'écran. -->
+    <ScrollViewer VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled">
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -11,7 +14,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -155,7 +158,7 @@
         </Border>
 
         <!-- Journal -->
-        <Border Grid.Row="5" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+        <Border Grid.Row="5" Height="220" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="12" Margin="0,0,0,12">
             <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                 <TextBlock x:Name="LogText" Foreground="{StaticResource SubTextBrush}" TextWrapping="Wrap" FontFamily="Consolas"/>
             </ScrollViewer>
@@ -184,4 +187,5 @@
                     Background="{StaticResource AccentBrush}" Foreground="White" Click="ProcessButton_Click"/>
         </StackPanel>
     </Grid>
+    </ScrollViewer>
 </Window>
