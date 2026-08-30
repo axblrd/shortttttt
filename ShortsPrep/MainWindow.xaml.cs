@@ -47,6 +47,13 @@ public partial class MainWindow : Window
         ImageAudioModePanel.Visibility = videoMode ? Visibility.Collapsed : Visibility.Visible;
     }
 
+    private void OrientationRadio_Changed(object sender, RoutedEventArgs e)
+    {
+        if (PublishBorder is null) return;
+        // Les pages de publication (TikTok/Insta/YouTube Shorts) n'ont de sens qu'au format portrait.
+        PublishBorder.Visibility = OrientationPortrait.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void MotionCheck_Changed(object sender, RoutedEventArgs e)
     {
         if (KenBurnsIntensityPanel is null || BassSensitivityPanel is null) return;
@@ -110,22 +117,38 @@ public partial class MainWindow : Window
     private void TrimVideoButton_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedFile is null) return;
-        var trimWindow = new TrimWindow(_selectedFile) { Owner = this };
-        if (trimWindow.ShowDialog() == true && trimWindow.Result is not null)
+        try
         {
-            _videoTrim = trimWindow.Result;
-            VideoTrimText.Text = $"{_videoTrim.StartSeconds:F1}s -> {_videoTrim.EndSeconds:F1}s ({_videoTrim.Duration:F1}s)";
+            var trimWindow = new TrimWindow(_selectedFile) { Owner = this };
+            if (trimWindow.ShowDialog() == true && trimWindow.Result is not null)
+            {
+                _videoTrim = trimWindow.Result;
+                VideoTrimText.Text = $"{_videoTrim.StartSeconds:F1}s -> {_videoTrim.EndSeconds:F1}s ({_videoTrim.Duration:F1}s)";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("Impossible d'ouvrir l'éditeur de recadrage : " + ex.Message);
+            Log("Le format vidéo n'est peut-être pas lisible par le lecteur intégré à Windows. " +
+                "Essaie de convertir le fichier une première fois, ou traite-le sans recadrage.");
         }
     }
 
     private void TrimAudioButton_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedAudio is null) return;
-        var trimWindow = new TrimWindow(_selectedAudio) { Owner = this };
-        if (trimWindow.ShowDialog() == true && trimWindow.Result is not null)
+        try
         {
-            _audioTrim = trimWindow.Result;
-            AudioTrimText.Text = $"{_audioTrim.StartSeconds:F1}s -> {_audioTrim.EndSeconds:F1}s ({_audioTrim.Duration:F1}s)";
+            var trimWindow = new TrimWindow(_selectedAudio) { Owner = this };
+            if (trimWindow.ShowDialog() == true && trimWindow.Result is not null)
+            {
+                _audioTrim = trimWindow.Result;
+                AudioTrimText.Text = $"{_audioTrim.StartSeconds:F1}s -> {_audioTrim.EndSeconds:F1}s ({_audioTrim.Duration:F1}s)";
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("Impossible d'ouvrir l'éditeur de recadrage : " + ex.Message);
         }
     }
 
@@ -269,6 +292,17 @@ public partial class MainWindow : Window
         return dir;
     }
 
+    /// <summary>Plateformes cochées pour l'ouverture post-génération (uniquement pertinent en portrait).</summary>
+    private List<PlatformProfile> GetPlatformsToOpen(Orientation orientation)
+    {
+        var list = new List<PlatformProfile>();
+        if (orientation != Orientation.Portrait9x16) return list;
+        if (TikTokCheck.IsChecked == true) list.Add(PlatformProfiles.TikTok);
+        if (InstagramCheck.IsChecked == true) list.Add(PlatformProfiles.InstagramReels);
+        if (YoutubeCheck.IsChecked == true) list.Add(PlatformProfiles.YouTubeShorts);
+        return list;
+    }
+
     private async Task RunPipelineAsync(string inputFile)
     {
         var outputDir = ResolveOutputDir(inputFile, "_shorts");
@@ -294,30 +328,23 @@ public partial class MainWindow : Window
             : QualityMode.VisuallyLossless;
         var orientation = OrientationLandscape.IsChecked == true
             ? Orientation.Landscape16x9 : Orientation.Portrait9x16;
+        var motion = GetMotionSettings();
 
         if (_videoTrim is not null)
             Log($"Recadrage temporel : {_videoTrim.StartSeconds:F1}s -> {_videoTrim.EndSeconds:F1}s");
         if (orientation == Orientation.Portrait9x16)
-            Log("Format portrait : durée limitée à 60s max.");
+            Log("Format portrait (short) : durée limitée à 60s max.");
+        if (motion.IsAnyEnabled)
+            Log($"Mouvement activé : Ken Burns={motion.KenBurnsEnabled}, Réactif aux basses={motion.BassReactiveEnabled}");
 
-        var selected = new List<PlatformProfile>();
-        if (TikTokCheck.IsChecked == true) selected.Add(PlatformProfiles.TikTok);
-        if (InstagramCheck.IsChecked == true) selected.Add(PlatformProfiles.InstagramReels);
-        if (YoutubeCheck.IsChecked == true) selected.Add(PlatformProfiles.YouTubeShorts);
+        var outFile = Path.Combine(outputDir, orientation == Orientation.Portrait9x16 ? "short.mp4" : "video_paysage.mp4");
+        StatusText.Text = "Encodage...";
+        Log("Encodage en cours...");
+        await _processor.ConvertToPortraitAsync(inputFile, outFile, quality, info, orientation, motion,
+            _videoTrim, new Progress<string>(Log), MakePercentProgress());
+        Log($"  -> {outFile}");
 
-        string? firstOutFile = null;
-        foreach (var profile in selected)
-        {
-            var outFile = Path.Combine(outputDir, $"{profile.Name.Replace(" ", "_")}.mp4");
-            firstOutFile ??= outFile;
-            StatusText.Text = $"Encodage pour {profile.Name}...";
-            Log($"Préparation pour {profile.Name}...");
-            await _processor.ConvertToPortraitAsync(inputFile, outFile, profile, quality, info, orientation,
-                _videoTrim, new Progress<string>(Log), MakePercentProgress());
-            Log($"  -> {outFile}");
-        }
-
-        FinishAndOpen(outputDir, firstOutFile, selected);
+        FinishAndOpen(outputDir, outFile, GetPlatformsToOpen(orientation));
     }
 
     private async Task RunImageAudioPipelineAsync(string imagePath, string audioPath)
@@ -349,7 +376,7 @@ public partial class MainWindow : Window
             Log($"Mouvement activé : Ken Burns={motion.KenBurnsEnabled} (intensité {motion.KenBurnsIntensity01:P0}), " +
                 $"Réactif aux basses={motion.BassReactiveEnabled} (sensibilité {motion.BassSensitivity01:P0})");
         if (orientation == Orientation.Portrait9x16)
-            Log("Format portrait : durée limitée à 60s max.");
+            Log("Format portrait (short) : durée limitée à 60s max.");
 
         string? firstOutFile = null;
 
@@ -364,23 +391,15 @@ public partial class MainWindow : Window
             firstOutFile ??= masterOut;
         }
 
-        var selected = new List<PlatformProfile>();
-        if (TikTokCheck.IsChecked == true) selected.Add(PlatformProfiles.TikTok);
-        if (InstagramCheck.IsChecked == true) selected.Add(PlatformProfiles.InstagramReels);
-        if (YoutubeCheck.IsChecked == true) selected.Add(PlatformProfiles.YouTubeShorts);
+        var outFile = Path.Combine(outputDir, orientation == Orientation.Portrait9x16 ? "short.mp4" : "video_paysage.mp4");
+        StatusText.Text = "Génération de la vidéo...";
+        Log("Génération de la vidéo (image + son)...");
+        await _processor.CreateFromImageAndAudioAsync(imagePath, audioPath, outFile, quality, orientation,
+            motion, _audioTrim, new Progress<string>(Log), MakePercentProgress());
+        Log($"  -> {outFile}");
+        firstOutFile ??= outFile;
 
-        foreach (var profile in selected)
-        {
-            var outFile = Path.Combine(outputDir, $"{profile.Name.Replace(" ", "_")}.mp4");
-            firstOutFile ??= outFile;
-            StatusText.Text = $"Génération pour {profile.Name}...";
-            Log($"Génération de la vidéo (image + son) pour {profile.Name}...");
-            await _processor.CreateFromImageAndAudioAsync(imagePath, audioPath, outFile, profile, quality, orientation,
-                motion, _audioTrim, new Progress<string>(Log), MakePercentProgress());
-            Log($"  -> {outFile}");
-        }
-
-        FinishAndOpen(outputDir, firstOutFile, selected);
+        FinishAndOpen(outputDir, firstOutFile, GetPlatformsToOpen(orientation));
     }
 
     private void FinishAndOpen(string outputDir, string? fileToPreview, List<PlatformProfile> platformsOpened)

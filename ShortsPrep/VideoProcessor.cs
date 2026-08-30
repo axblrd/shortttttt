@@ -92,28 +92,45 @@ public class VideoProcessor
     }
 
     /// <summary>
-    /// Convertit la vidéo au format choisi (portrait 9:16 ou paysage 16:9). Les sorties
-    /// portrait sont automatiquement limitées à 60s (contrainte shorts/reels/stories).
+    /// Convertit la vidéo au format choisi (portrait 9:16 ou paysage 16:9), avec option de
+    /// mouvement de caméra / réactivité aux basses (comme pour le mode image+son). Les
+    /// sorties portrait sont automatiquement limitées à 60s (contrainte shorts/reels/stories).
     /// </summary>
     public async Task ConvertToPortraitAsync(
         string inputPath,
         string outputPath,
-        PlatformProfile profile,
         QualityMode quality,
         VideoInfo info,
         Orientation orientation,
+        MotionSettings? motion = null,
         TrimRange? trim = null,
         IProgress<string>? progress = null,
         IProgress<int>? percentProgress = null)
     {
+        motion ??= MotionSettings.None;
         var (tw, th) = GetDimensions(orientation);
-        string videoFilter = BuildAspectFilter(info, tw, th);
+
+        double sourceDuration = trim?.Duration ?? info.DurationSeconds;
+        double effectiveDuration = orientation == Orientation.Portrait9x16
+            ? Math.Min(sourceDuration, PortraitMaxDurationSeconds) : sourceDuration;
+
+        List<BassPeak> peaks = new();
+        if (motion.BassReactiveEnabled && info.HasAudio)
+        {
+            progress?.Report("Analyse des basses de l'audio...");
+            peaks = await _bassAnalyzer.AnalyzePeaksAsync(inputPath, motion.BassSensitivity01);
+            progress?.Report($"{peaks.Count} pics de basses détectés.");
+        }
+
+        string videoFilter = motion.IsAnyEnabled
+            ? BuildMotionFilter(info, tw, th, motion, peaks, effectiveDuration)
+            : BuildAspectFilter(info, tw, th);
 
         string videoCodecArgs = quality switch
         {
             QualityMode.TrueLossless => "-c:v libx264 -preset veryslow -crf 0 -pix_fmt yuv420p",
             QualityMode.VisuallyLossless => "-c:v libx264 -preset slow -crf 16 -pix_fmt yuv420p",
-            QualityMode.CopyWhenPossible when IsAlreadyCompatible(info, tw, th)
+            QualityMode.CopyWhenPossible when IsAlreadyCompatible(info, tw, th) && !motion.IsAnyEnabled
                 => "-c:v copy",
             _ => "-c:v libx264 -preset slow -crf 16 -pix_fmt yuv420p"
         };
@@ -122,17 +139,13 @@ public class VideoProcessor
         string filterArgs = copyingVideo ? "" : $"-vf \"{videoFilter}\"";
         string audioArgs = info.HasAudio ? "-c:a aac -b:a 320k -ar 48000" : "-an";
 
-        double sourceDuration = trim?.Duration ?? info.DurationSeconds;
-        double effectiveDuration = orientation == Orientation.Portrait9x16
-            ? Math.Min(sourceDuration, PortraitMaxDurationSeconds) : sourceDuration;
-
         string seekArgs = trim is not null ? $"-ss {trim.StartSeconds.ToString(CultureInfo.InvariantCulture)} " : "";
         string durationArgs = $"-t {effectiveDuration.ToString(CultureInfo.InvariantCulture)} ";
 
         var args = $"-y {seekArgs}-i \"{inputPath}\" {filterArgs} {videoCodecArgs} {audioArgs} {durationArgs}" +
                    $"-movflags +faststart \"{outputPath}\"";
 
-        progress?.Report($"Encodage pour {profile.Name}...");
+        progress?.Report($"Encodage ({(orientation == Orientation.Portrait9x16 ? "portrait" : "paysage")})...");
         await RunAsync(FfmpegManager.FfmpegExe, args, effectiveDuration, percentProgress);
     }
 
@@ -145,7 +158,6 @@ public class VideoProcessor
         string imagePath,
         string audioPath,
         string outputPath,
-        PlatformProfile profile,
         QualityMode quality,
         Orientation orientation,
         MotionSettings? motion = null,
@@ -186,7 +198,7 @@ public class VideoProcessor
             $"-c:a aac -b:a 320k -ar 48000 " +
             $"-t {effectiveDuration.ToString(CultureInfo.InvariantCulture)} -movflags +faststart \"{outputPath}\"";
 
-        progress?.Report($"Création de la vidéo image + audio pour {profile.Name}...");
+        progress?.Report($"Création de la vidéo image + audio ({(orientation == Orientation.Portrait9x16 ? "portrait" : "paysage")})...");
         await RunAsync(FfmpegManager.FfmpegExe, args, effectiveDuration, percentProgress);
     }
 

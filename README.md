@@ -35,9 +35,21 @@ maintenu à jour automatiquement.
 7. **Limite automatique à 60 secondes pour les sorties portrait** (shorts/
    reels/stories), pour rester dans les contraintes des plateformes. Le format
    paysage et le fichier maître ne sont pas limités.
-8. **Éditeur de recadrage temporel** ("Rogner...") : une fenêtre simple avec
-   aperçu vidéo/audio et deux curseurs (début/fin) pour choisir la partie à
-   garder avant traitement — utile pour réduire un fichier trop long.
+8. **Éditeur de recadrage temporel** ("Rogner / sélectionner une partie...") :
+   une fenêtre avec aperçu (vidéo affichée en entier, quel que soit son format
+   d'origine) et deux curseurs (début/fin) pour choisir la partie à garder
+   avant traitement. Fonctionne pour la vidéo (mode vidéo existante) et pour
+   l'audio (mode image + son). Si l'aperçu ne s'affiche pas (codec non lu par
+   le lecteur Windows intégré), un message l'indique clairement au lieu de
+   rester silencieux.
+9. **Un seul format "short"** : TikTok, Instagram Reels et YouTube Shorts
+   utilisent exactement le même format (portrait 9:16, 60s max) — un seul
+   fichier `short.mp4` est donc généré, avec des cases à cocher séparées pour
+   choisir vers quelles pages l'ouvrir après coup (pure commodité de
+   publication, ça n'affecte pas le fichier généré).
+10. **Le mouvement de caméra et la réactivité aux basses s'appliquent aussi à
+    une vidéo existante** (mode vidéo, portrait ou paysage), pas seulement au
+    mode image + son.
 1. **Vérifie et met à jour FFmpeg** au lancement (dernière build statique Windows
    depuis les releases GitHub officielles de BtbN/FFmpeg-Builds — gratuites, à
    jour en continu, licence GPL "full" avec tous les codecs).

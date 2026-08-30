@@ -1,7 +1,7 @@
 <Window x:Class="ShortsPrep.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ShortsPrep — Tututte" Height="760" Width="820"
+        Title="ShortsPrep — Tututte" Height="820" Width="860"
         Background="{StaticResource BgBrush}"
         FontFamily="Segoe UI">
     <Grid Margin="24">
@@ -39,7 +39,8 @@
                     <Button x:Name="BrowseButton" Content="Choisir une vidéo..." Padding="12,6" Click="BrowseButton_Click"/>
                     <TextBlock x:Name="SelectedFileText" Text="Aucun fichier sélectionné"
                                Foreground="{StaticResource SubTextBrush}" Margin="12,0,12,0" VerticalAlignment="Center"/>
-                    <Button x:Name="TrimVideoButton" Content="Rogner..." Padding="10,6" Click="TrimVideoButton_Click" IsEnabled="False"/>
+                    <Button x:Name="TrimVideoButton" Content="Rogner / sélectionner une partie..." Padding="10,6"
+                            Click="TrimVideoButton_Click" IsEnabled="False"/>
                     <TextBlock x:Name="VideoTrimText" Text="" Foreground="{StaticResource AccentBrush}"
                                Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
@@ -61,24 +62,6 @@
                     </StackPanel>
                     <CheckBox x:Name="FlacMasterCheck" Content="Créer aussi un fichier maître 100% sans perte (image + audio FLAC intégré, .mkv)"
                               Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,4,0,4"/>
-
-                    <Separator Margin="0,8"/>
-                    <TextBlock Text="Mouvement de caméra et réactivité à la musique" Foreground="{StaticResource TextBrush}"
-                               FontWeight="SemiBold" Margin="0,0,0,6"/>
-                    <CheckBox x:Name="KenBurnsCheck" Content="Mouvement de caméra (zoom lent + léger travelling, façon Ken Burns)"
-                              Foreground="{StaticResource TextBrush}" IsChecked="True" Checked="MotionCheck_Changed" Unchecked="MotionCheck_Changed"/>
-                    <StackPanel x:Name="KenBurnsIntensityPanel" Orientation="Horizontal" Margin="20,2,0,6">
-                        <TextBlock Text="Intensité :" Foreground="{StaticResource SubTextBrush}" Width="70" VerticalAlignment="Center"/>
-                        <Slider x:Name="KenBurnsIntensitySlider" Minimum="0" Maximum="100" Value="50" Width="220"/>
-                    </StackPanel>
-                    <CheckBox x:Name="BassReactiveCheck" Content="Le zoom réagit aux basses (pulsation sur les kicks/basses détectées)"
-                              Foreground="{StaticResource TextBrush}" Checked="MotionCheck_Changed" Unchecked="MotionCheck_Changed"/>
-                    <StackPanel x:Name="BassSensitivityPanel" Orientation="Horizontal" Margin="20,2,0,4" Visibility="Collapsed">
-                        <TextBlock Text="Sensibilité :" Foreground="{StaticResource SubTextBrush}" Width="70" VerticalAlignment="Center"/>
-                        <Slider x:Name="BassSensitivitySlider" Minimum="0" Maximum="100" Value="60" Width="220"/>
-                    </StackPanel>
-                    <TextBlock Text="Analyse l'énergie des basses de l'audio (pas une détection de rythme parfaite : ça pulse fort sur les kicks/basses marquées, moins sur des morceaux sans basse nette)."
-                               Foreground="{StaticResource SubTextBrush}" FontStyle="Italic" TextWrapping="Wrap" Margin="0,2,0,0"/>
 
                     <Separator Margin="0,8"/>
                     <TextBlock Text="Méthode simple (commande directe, audio copié sans ré-encodage)"
@@ -103,13 +86,14 @@
             <StackPanel>
                 <TextBlock Text="Format de sortie" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                    <RadioButton x:Name="OrientationPortrait" Content="Portrait 9:16 (shorts / reels / stories)"
-                                 Foreground="{StaticResource TextBrush}" IsChecked="True" GroupName="Orientation" Margin="0,0,20,0"/>
+                    <RadioButton x:Name="OrientationPortrait" Content="Portrait 9:16 — short (TikTok / Reels / YouTube Shorts, même format)"
+                                 Foreground="{StaticResource TextBrush}" IsChecked="True" GroupName="Orientation" Margin="0,0,20,0"
+                                 Checked="OrientationRadio_Changed"/>
                     <RadioButton x:Name="OrientationLandscape" Content="Paysage 16:9 (format classique)"
-                                 Foreground="{StaticResource TextBrush}" GroupName="Orientation"/>
+                                 Foreground="{StaticResource TextBrush}" GroupName="Orientation" Checked="OrientationRadio_Changed"/>
                 </StackPanel>
                 <Separator Margin="0,0,0,12"/>
-                <TextBlock Text="Qualité vidéo (fichiers par plateforme)" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="Qualité vidéo" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <StackPanel Orientation="Horizontal">
                     <RadioButton x:Name="QualityVisualLossless" Content="Visuellement sans perte (recommandé)"
                                  Foreground="{StaticResource TextBrush}" IsChecked="True" GroupName="Quality" Margin="0,0,20,0"/>
@@ -127,13 +111,31 @@
                                  IsChecked="True" GroupName="AudioFormat" Margin="0,0,20,0"/>
                     <RadioButton x:Name="AudioFlac" Content="FLAC" Foreground="{StaticResource TextBrush}" GroupName="AudioFormat"/>
                 </StackPanel>
+                <Separator Margin="0,12"/>
+                <TextBlock Text="Mouvement de caméra et réactivité à la musique (s'applique aussi à une vidéo existante, même en portrait)"
+                           Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,6" TextWrapping="Wrap"/>
+                <CheckBox x:Name="KenBurnsCheck" Content="Mouvement de caméra (zoom lent + léger travelling, façon Ken Burns)"
+                          Foreground="{StaticResource TextBrush}" Checked="MotionCheck_Changed" Unchecked="MotionCheck_Changed"/>
+                <StackPanel x:Name="KenBurnsIntensityPanel" Orientation="Horizontal" Margin="20,2,0,6" Visibility="Collapsed">
+                    <TextBlock Text="Intensité :" Foreground="{StaticResource SubTextBrush}" Width="70" VerticalAlignment="Center"/>
+                    <Slider x:Name="KenBurnsIntensitySlider" Minimum="0" Maximum="100" Value="50" Width="220"/>
+                </StackPanel>
+                <CheckBox x:Name="BassReactiveCheck" Content="Le zoom réagit aux basses (pulsation sur les kicks/basses détectées)"
+                          Foreground="{StaticResource TextBrush}" Checked="MotionCheck_Changed" Unchecked="MotionCheck_Changed"/>
+                <StackPanel x:Name="BassSensitivityPanel" Orientation="Horizontal" Margin="20,2,0,4" Visibility="Collapsed">
+                    <TextBlock Text="Sensibilité :" Foreground="{StaticResource SubTextBrush}" Width="70" VerticalAlignment="Center"/>
+                    <Slider x:Name="BassSensitivitySlider" Minimum="0" Maximum="100" Value="60" Width="220"/>
+                </StackPanel>
+                <TextBlock Text="Analyse l'énergie des basses de l'audio (pas une détection de rythme/BPM parfaite : ça pulse fort sur les kicks/basses marquées)."
+                           Foreground="{StaticResource SubTextBrush}" FontStyle="Italic" TextWrapping="Wrap" Margin="0,2,0,0"/>
             </StackPanel>
         </Border>
 
-        <!-- Plateformes -->
-        <Border Grid.Row="3" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
+        <!-- Publication -->
+        <Border x:Name="PublishBorder" Grid.Row="3" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="0,0,0,12">
             <StackPanel>
-                <TextBlock Text="Plateformes à préparer (fichiers .mp4 compatibles)" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="Ouvrir pour publier après génération (un seul fichier .mp4 sert pour les trois, même format)"
+                           Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,0,0,8" TextWrapping="Wrap"/>
                 <StackPanel Orientation="Horizontal">
                     <CheckBox x:Name="TikTokCheck" Content="TikTok" IsChecked="True" Foreground="{StaticResource TextBrush}" Margin="0,0,20,0"/>
                     <CheckBox x:Name="InstagramCheck" Content="Instagram Reels" IsChecked="True" Foreground="{StaticResource TextBrush}" Margin="0,0,20,0"/>
